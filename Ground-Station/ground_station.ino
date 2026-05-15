@@ -1,27 +1,49 @@
+#include <SPI.h>
+#include <LoRa.h>
+
+// ---------- LoRa pins ----------
+#define LORA_SCK    5
+#define LORA_MISO   17
+#define LORA_MOSI   27
+#define LORA_NSS    18
+#define LORA_RST    14
+#define LORA_DIO0   26
+
+void setup() {
+  Serial.begin(115200);
+  delay(2000);
+  Serial.println("LoRa Receiver - Ground Station");
+
+  SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
+  LoRa.setPins(LORA_NSS, LORA_RST, LORA_DIO0);
+  if (!LoRa.begin(433E6)) {
+    Serial.println("LoRa init FAILED!");
+    while (1);
+  }
+  // ต้องตรงกับ Transmitter เป๊ะ
+  LoRa.setSpreadingFactor(7);
+  LoRa.setSignalBandwidth(125E3);
+  LoRa.setCodingRate4(5);
+  LoRa.setSyncWord(0xF3);
+  Serial.println("LoRa init OK - รอรับข้อมูล");
+}
+
 void loop() {
-    mpu.update_accel_gyro(); // อัปเดตค่า IMU ตลอดเวลาเพื่อให้ได้ข้อมูลที่สดใหม่
-
-    static uint32_t last_send = 0;
-    uint32_t interval = 2000; // ตั้งเวลาส่งข้อมูลทุก 2 วินาที (ปรับได้)
-
-    if (millis() - last_send > interval) {
-        last_send = millis();
-
-        // --- ส่วนการแสดงผล ---
-        Serial.print("[IMU] AccZ: "); Serial.print(mpu.getAccZ(), 2);
-        Serial.print(" | GyrZ: "); Serial.print(mpu.getGyroZ(), 1);
-
-        if (bme_found) {
-            float t = bme.readTemperature();
-            float h = bme.readHumidity();
-            float p = bme.readPressure() / 100.0F;
-
-            Serial.print(" || [ENV] Temp: "); Serial.print(t, 1);
-            Serial.print("C | Hum: "); Serial.print(h, 0);
-            Serial.print("% | Pres: "); Serial.print(p, 1);
-            Serial.println(" hPa");
-        } else {
-            Serial.println(" || [ENV] BME280 Sensor Missing!");
-        }
+  int packetSize = LoRa.parsePacket();
+  if (packetSize) {
+    String data = "";
+    while (LoRa.available()) {
+      data += (char)LoRa.read();
     }
+    int rssi = LoRa.packetRssi();
+    float snr = LoRa.packetSnr();
+
+    // ส่งออก Serial บรรทัดเดียว ต่อท้ายด้วย rssi,snr
+    // รูปแบบสุดท้าย: ID,ax,ay,az,gx,gy,gz,temp,pressure,humidity,altitude,counter,rssi,snr
+    Serial.print(data);
+    Serial.print(",");
+    Serial.print(rssi);
+    Serial.print(",");
+    Serial.println(snr);
+  }
 }
